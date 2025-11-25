@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="CellposeCsharp.API/CellposeCsharp.API.csproj" />
+  <Project Path="CellposeCsharp.Inference/CellposeCsharp.Inference.csproj" />
+</Solution>

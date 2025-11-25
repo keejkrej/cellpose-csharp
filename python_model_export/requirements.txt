@@ -1,0 +1,10 @@
+torch
+torchvision
+onnx
+onnxruntime
+onnxscript
+segment-anything
+cellpose
+opencv-python
+numpy
+requests
