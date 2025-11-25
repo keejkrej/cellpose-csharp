@@ -108,60 +108,66 @@ namespace CellposeCsharp.Inference
             var outputTensor = results.First().AsTensor<float>();
             var outputShape = outputTensor.Dimensions.ToArray();
             
-            // 3. Postprocess: Convert output to image
-            // Output shape should be [1, 3, 256, 256] for flows+cellprob
-            // Channels: 0=Y flow, 1=X flow, 2=Cell probability
-            var outputArray = outputTensor.ToArray();
-            var cellProbChannel = 2; // Cell probability is the last channel
+            if (outputShape.Length != 4 || outputShape[1] < 2)
+            {
+                throw new InvalidOperationException($"Unexpected model output shape: [{string.Join(",", outputShape)}]");
+            }
+
+            var outputHeight = outputShape[2];
+            var outputWidth = outputShape[3];
+            var channelSize = outputHeight * outputWidth;
             
-            // Extract cell probability channel
-            int channelSize = modelInputSize * modelInputSize;
-            var probValues = new float[channelSize];
+            // 3. Postprocess: Convert flow vectors to a colored flow field map
+            // Channels: 0=Y flow, 1=X flow, 2=Cell probability (unused here)
+            var outputArray = outputTensor.ToArray();
+            var flowY = new float[channelSize];
+            var flowX = new float[channelSize];
             for (int i = 0; i < channelSize; i++)
             {
-                probValues[i] = outputArray[cellProbChannel * channelSize + i];
+                flowY[i] = outputArray[i]; // channel 0
+                flowX[i] = outputArray[channelSize + i]; // channel 1
             }
-            
-            // Apply sigmoid activation if values are logits (typical for Cellpose)
-            // Find min/max to determine if we need sigmoid
-            float minProb = probValues.Min();
-            float maxProb = probValues.Max();
-            
-            // If values are outside [0,1], they're likely logits - apply sigmoid
-            if (minProb < 0 || maxProb > 1)
-            {
-                for (int i = 0; i < channelSize; i++)
-                {
-                    // Sigmoid: 1 / (1 + exp(-x))
-                    probValues[i] = 1.0f / (1.0f + (float)Math.Exp(-probValues[i]));
-                }
-            }
-            
-            // Create probability map
-            using var probMat = new Mat(modelInputSize, modelInputSize, MatType.CV_32F);
+
+            using var flowYMat = new Mat(outputHeight, outputWidth, MatType.CV_32F);
+            using var flowXMat = new Mat(outputHeight, outputWidth, MatType.CV_32F);
             unsafe
             {
-                var probPtr = (float*)probMat.DataPointer;
+                var flowYPtr = (float*)flowYMat.DataPointer;
+                var flowXPtr = (float*)flowXMat.DataPointer;
                 for (int i = 0; i < channelSize; i++)
                 {
-                    probPtr[i] = probValues[i];
+                    flowYPtr[i] = flowY[i];
+                    flowXPtr[i] = flowX[i];
                 }
             }
-            
-            // Normalize to [0, 255] for visualization
-            using var normalizedMat = new Mat();
-            probMat.ConvertTo(normalizedMat, MatType.CV_8U, 255.0);
-            
-            // Resize probability map to original image size
-            using var probResized = new Mat();
-            Cv2.Resize(normalizedMat, probResized, new OpenCvSharp.Size(originalMat.Width, originalMat.Height));
-            
-            // Create colored visualization for the probability heatmap (no overlay)
-            using var coloredProb = new Mat();
-            Cv2.ApplyColorMap(probResized, coloredProb, ColormapTypes.Jet);
 
-            // Encode as PNG (heatmap only)
-            Cv2.ImEncode(".png", coloredProb, out byte[] resultBytes);
+            using var magnitude = new Mat();
+            using var angle = new Mat();
+            Cv2.CartToPolar(flowXMat, flowYMat, magnitude, angle, angleInDegrees: true);
+
+            // Normalize magnitude to [0,1] for value channel; keep hue from angle (0-180 in OpenCV HSV)
+            using var magnitudeNormalized = new Mat();
+            Cv2.Normalize(magnitude, magnitudeNormalized, 0.0, 1.0, NormTypes.MinMax);
+
+            using var angleHue = new Mat();
+            angle.ConvertTo(angleHue, MatType.CV_32F, 0.5); // scale 0-360 -> 0-180 for OpenCV HSV
+
+            using var saturation = new Mat(outputHeight, outputWidth, MatType.CV_32F, Scalar.All(1.0));
+            using var hsv = new Mat();
+            Cv2.Merge(new Mat[] { angleHue, saturation, magnitudeNormalized }, hsv);
+
+            using var flowBgr = new Mat();
+            Cv2.CvtColor(hsv, flowBgr, ColorConversionCodes.HSV2BGR);
+
+            using var flowBgr8U = new Mat();
+            flowBgr.ConvertTo(flowBgr8U, MatType.CV_8UC3, 255.0);
+
+            // Resize flow map back to the original image dimensions
+            using var flowResized = new Mat();
+            Cv2.Resize(flowBgr8U, flowResized, new OpenCvSharp.Size(originalMat.Width, originalMat.Height));
+
+            // Encode as PNG (flow field visualization)
+            Cv2.ImEncode(".png", flowResized, out byte[] resultBytes);
             
             return await Task.FromResult(resultBytes);
         }
