@@ -156,25 +156,12 @@ namespace CellposeCsharp.Inference
             using var probResized = new Mat();
             Cv2.Resize(normalizedMat, probResized, new OpenCvSharp.Size(originalMat.Width, originalMat.Height));
             
-            // Create overlay: blend original image with probability map
-            // Convert original to grayscale for better visualization
-            using var originalGray = new Mat();
-            Cv2.CvtColor(originalMat, originalGray, ColorConversionCodes.BGR2GRAY);
-            
-            // Create colored visualization: green for high probability
+            // Create colored visualization for the probability heatmap (no overlay)
             using var coloredProb = new Mat();
             Cv2.ApplyColorMap(probResized, coloredProb, ColormapTypes.Jet);
-            
-            // Blend original with probability map (50/50)
-            using var blended = new Mat();
-            Cv2.AddWeighted(originalGray, 0.5, probResized, 0.5, 0, blended);
-            
-            // Convert to BGR for final output
-            using var finalMat = new Mat();
-            Cv2.CvtColor(blended, finalMat, ColorConversionCodes.GRAY2BGR);
-            
-            // Encode as PNG
-            Cv2.ImEncode(".png", finalMat, out byte[] resultBytes);
+
+            // Encode as PNG (heatmap only)
+            Cv2.ImEncode(".png", coloredProb, out byte[] resultBytes);
             
             return await Task.FromResult(resultBytes);
         }

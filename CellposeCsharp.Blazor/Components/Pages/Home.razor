@@ -1,0 +1,215 @@
+@page "/"
+@inject InferenceApiClient ApiClient
+
+<PageTitle>Cellpose Inference</PageTitle>
+
+<section class="hero">
+    <div>
+        <p class="eyebrow">Cellpose SAM / C# / ONNX Runtime</p>
+        <h1>Run cell segmentation straight from Blazor.</h1>
+        <p class="lede">
+            Drop a microscopy image, let the ASP.NET API run the ONNX model, and preview the overlay without leaving
+            the browser.
+        </p>
+        <div class="chip-row">
+            <span class="chip">API @ApiClient.BaseUrl</span>
+            <span class="chip">Blazor Server</span>
+            <span class="chip">GPU/CPU friendly</span>
+        </div>
+    </div>
+    <div class="cta">
+        <button class="primary" @onclick="RunInference" disabled="@(!CanRun)">
+            @(isBusy ? "Running..." : "Run inference")
+        </button>
+        <small class="helper">PNG/JPEG up to @SizeText(MaxFileSize).</small>
+        <div class="status">
+            <span class="status-dot @(isBusy ? "pulse" : string.Empty)"></span>
+            <span>@status</span>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(error))
+        {
+            <div class="error">@error</div>
+        }
+    </div>
+</section>
+
+<section class="panel-grid">
+    <article class="card upload-card">
+        <div class="card-header">
+            <div>
+                <p class="eyebrow">Input</p>
+                <h3>Upload or drop an image</h3>
+            </div>
+            <button class="ghost" @onclick="ClearSelection" disabled="@(selectedFile is null)">Reset</button>
+        </div>
+
+        <label class="dropzone">
+            <div class="dropzone-inner">
+                <div class="drop-icon">^</div>
+                <div>
+                    <p class="drop-title">Choose a file</p>
+                    <p class="drop-sub">or drag & drop here</p>
+                </div>
+            </div>
+            <InputFile OnChange="HandleFileSelected" accept="image/*" class="file-input" />
+        </label>
+
+        @if (previewDataUrl is not null)
+        {
+            <div class="preview">
+                <img src="@previewDataUrl" alt="Input preview" />
+                <div class="meta">
+                    <div>
+                        <p class="meta-label">File</p>
+                        <p class="meta-value">@selectedFile?.Name</p>
+                    </div>
+                    <div>
+                        <p class="meta-label">Size</p>
+                        <p class="meta-value">@SizeText(selectedFile?.Size ?? 0)</p>
+                    </div>
+                    <div>
+                        <p class="meta-label">Type</p>
+                        <p class="meta-value">@selectedContentType</p>
+                    </div>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="placeholder">
+                <p>No image yet.</p>
+                <p class="muted">Drop a microscopy frame to preview it here.</p>
+            </div>
+        }
+    </article>
+
+    <article class="card result-card">
+        <div class="card-header">
+            <div>
+                <p class="eyebrow">Output</p>
+                <h3>Overlay from the API</h3>
+            </div>
+            <span class="badge @(resultDataUrl is null ? "secondary" : "success")">
+                @(resultDataUrl is null ? "Waiting" : "Ready")
+            </span>
+        </div>
+
+        @if (isBusy)
+        {
+            <div class="placeholder">
+                <div class="loading-dots">
+                    <span></span><span></span><span></span>
+                </div>
+                <p class="muted">Running inference via @ApiClient.BaseUrl</p>
+            </div>
+        }
+        else if (resultDataUrl is not null)
+        {
+            <div class="preview">
+                <img src="@resultDataUrl" alt="Inference result" />
+            </div>
+        }
+        else
+        {
+            <div class="placeholder">
+                <p>Output will show up here.</p>
+                <p class="muted">We return the processed PNG from `/api/Inference`.</p>
+            </div>
+        }
+    </article>
+</section>
+
+@code
+{
+    private const long MaxFileSize = 10 * 1024 * 1024; // 10 MB
+
+    private IBrowserFile? selectedFile;
+    private byte[]? selectedBytes;
+    private string? selectedContentType;
+    private string? previewDataUrl;
+    private string? resultDataUrl;
+    private string status = "Choose an image to begin.";
+    private string? error;
+    private bool isBusy;
+
+    private bool CanRun => selectedBytes is not null && !isBusy;
+
+    private async Task HandleFileSelected(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file is null)
+        {
+            ClearSelection();
+            return;
+        }
+
+        if (file.Size > MaxFileSize)
+        {
+            error = $"File is too large ({SizeText(file.Size)}). Max allowed: {SizeText(MaxFileSize)}.";
+            ClearSelection();
+            return;
+        }
+
+        selectedFile = file;
+        selectedContentType = string.IsNullOrWhiteSpace(file.ContentType) ? "image/png" : file.ContentType;
+        status = "File ready. Press run when you're ready.";
+        error = null;
+
+        await using var ms = new MemoryStream();
+        await file.OpenReadStream(MaxFileSize).CopyToAsync(ms);
+        selectedBytes = ms.ToArray();
+        previewDataUrl = $"data:{selectedContentType};base64,{Convert.ToBase64String(selectedBytes)}";
+        resultDataUrl = null;
+    }
+
+    private async Task RunInference()
+    {
+        if (selectedBytes is null || selectedFile is null)
+        {
+            status = "Pick an image first.";
+            return;
+        }
+
+        isBusy = true;
+        error = null;
+        status = "Running inference...";
+
+        try
+        {
+            await using var payload = new MemoryStream(selectedBytes);
+            var result = await ApiClient.RunInferenceAsync(
+                selectedFile.Name,
+                payload,
+                selectedContentType ?? "application/octet-stream");
+
+            resultDataUrl = $"data:{result.ContentType};base64,{Convert.ToBase64String(result.Data)}";
+            status = "Inference complete. Hover to zoom.";
+        }
+        catch (Exception ex)
+        {
+            error = ex.Message;
+            status = "Inference failed.";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private void ClearSelection()
+    {
+        selectedFile = null;
+        selectedBytes = null;
+        selectedContentType = null;
+        previewDataUrl = null;
+        resultDataUrl = null;
+        status = "Choose an image to begin.";
+    }
+
+    private static string SizeText(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024d:0.0} KB";
+        return $"{bytes / 1024d / 1024d:0.0} MB";
+    }
+}
