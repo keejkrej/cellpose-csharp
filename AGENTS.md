@@ -8,7 +8,7 @@ Project quick facts
 - Default model path: `models/cellpose_sam.onnx` (relative to repo root from API).
 
 Running
-- Local: `dotnet run --project CellposeCsharp.API` (ensure GPU/CUDA/cuDNN available if using GPU provider). Launch profile now binds `http://localhost:5050` only to avoid port clashes with 5001.
+- Local: `dotnet run --project CellposeCsharp.API` (ensure GPU/CUDA/cuDNN available if using GPU provider). Launch profile uses `https://localhost:5001;http://localhost:5000`.
 - MIGraphX native binaries are **not** committed; drop your MIGraphX-enabled `libonnxruntime.so*` and provider `.so` under `native/onnxruntime-migraphx/` (gitignored) and set  
   `LD_LIBRARY_PATH="$(pwd)/native/onnxruntime-migraphx:/opt/rocm/lib/migraphx/lib:/opt/rocm/lib:$LD_LIBRARY_PATH"`  
   before running so the MIGraphX-enabled `libonnxruntime.so` is loaded instead of the NuGet CPU copy.
