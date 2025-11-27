@@ -6,6 +6,7 @@ using Microsoft.ML.OnnxRuntime.Tensors;
 using OpenCvSharp;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.InteropServices;
 
 namespace CellposeCsharp.Inference
 {
@@ -32,20 +33,35 @@ namespace CellposeCsharp.Inference
             }
 
             var sessionOptions = new SessionOptions();
-
-            // Configure CUDA provider
-            // Note: The CUDA provider DLLs need to be in the output directory.
-            // Ensure you have installed CUDA Toolkit and cuDNN compatible with the ONNX Runtime version.
+            // Configure GPU provider based on OS
+            // Windows: CUDA provider (opt-in via env flag)
+            // Linux: MIGraphX provider can be opted into via USE_MIGRAPHX=1 (ROCm provider was dropped in ROCm 7.1 builds)
+            var enableCuda = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) && IsEnvTrue("USE_CUDA");
+            var enableMigraphx = RuntimeInformation.IsOSPlatform(OSPlatform.Linux) && IsEnvTrue("USE_MIGRAPHX");
             try
             {
-                sessionOptions.AppendExecutionProvider_CUDA();
+                if (enableCuda)
+                {
+                    sessionOptions.AppendExecutionProvider_CUDA();
+                }
+                else if (enableMigraphx)
+                {
+                    // Linux + MIGraphX (ROCm toolchain), available in recent ROCm builds
+                    sessionOptions.AppendExecutionProvider_MIGraphX();
+                }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Failed to load CUDA provider: {ex.Message}. Falling back to CPU.");
+                Console.WriteLine($"Failed to load GPU provider: {ex.Message}. Falling back to CPU.");
             }
 
             _session = new InferenceSession(_modelPath, sessionOptions);
+        }
+
+        private static bool IsEnvTrue(string name)
+        {
+            var value = Environment.GetEnvironmentVariable(name);
+            return value != null && (value.Equals("1") || value.Equals("true", StringComparison.OrdinalIgnoreCase) || value.Equals("yes", StringComparison.OrdinalIgnoreCase));
         }
 
         public async Task<byte[]> RunInferenceAsync(byte[] imageData)
@@ -178,4 +194,3 @@ namespace CellposeCsharp.Inference
         }
     }
 }
-
