@@ -9,7 +9,7 @@ Project quick facts
 
 Running
 - Local: `dotnet run --project CellposeCsharp.API` (ensure GPU/CUDA/cuDNN available if using GPU provider). Launch profile now binds `http://localhost:5050` only to avoid port clashes with 5001.
-- MIGraphX native binaries are checked into `native/onnxruntime-migraphx/`. Set  
+- MIGraphX native binaries are **not** committed; drop your MIGraphX-enabled `libonnxruntime.so*` and provider `.so` under `native/onnxruntime-migraphx/` (gitignored) and set  
   `LD_LIBRARY_PATH="$(pwd)/native/onnxruntime-migraphx:/opt/rocm/lib/migraphx/lib:/opt/rocm/lib:$LD_LIBRARY_PATH"`  
   before running so the MIGraphX-enabled `libonnxruntime.so` is loaded instead of the NuGet CPU copy.
 - Docker: `docker build -t cellpose-csharp .` then `docker run --gpus all -p 8080:8080 -v $(pwd)/models:/app/models cellpose-csharp`.
@@ -20,7 +20,7 @@ GPU providers
   - Build ORT with MIGraphX (example, ORT repo root):  
     `./build.sh --config Release --build_shared_lib --parallel --skip_tests --use_migraphx --compile_no_warning_as_error --cmake_extra_defines CMAKE_PREFIX_PATH=/opt/rocm --cmake_extra_defines onnxruntime_BUILD_UNIT_TESTS=OFF --build_dir build/Linux`  
     (Requires ROCm with MIGraphX at `/opt/rocm`; `libmigraphx*.so` live under `/opt/rocm/lib/migraphx/lib`.)
-  - MIGraphX-enabled binaries already checked in under `native/onnxruntime-migraphx/`; set `LD_LIBRARY_PATH` to include that path (plus ROCm) so they’re loaded at runtime.
+  - Drop the MIGraphX-enabled binaries under `native/onnxruntime-migraphx/` locally (gitignored) and set `LD_LIBRARY_PATH` to include that path (plus ROCm) so they’re loaded at runtime.
   - Set `LD_LIBRARY_PATH="/opt/rocm/lib/migraphx/lib:/opt/rocm/lib:$LD_LIBRARY_PATH"` when running so MIGraphX deps resolve. The managed NuGet (currently 1.23.2) can load a newer native (e.g. ORT 1.24.x) but keep an eye on version drift.
 
 OpenCvSharp on Arch Linux

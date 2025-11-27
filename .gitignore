@@ -70,3 +70,6 @@ python_model_export/*.onnx.data
 python_model_export/*.pth
 python_model_export/*.pt
 
+
+# MIGraphX natives (local-only)
+native/onnxruntime-migraphx/*.so*
